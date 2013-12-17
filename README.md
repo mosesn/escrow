@@ -8,4 +8,7 @@ It's future cache
 canceling the promise detaches the promise, doesn't kill the future  
 evict failed futures
 
+## todo
+manual eviction
+
 [0]: https://github.com/stuhood
