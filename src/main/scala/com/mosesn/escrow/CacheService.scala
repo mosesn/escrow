@@ -7,13 +7,13 @@ import scala.collection.concurrent
 /**
  * Generic future cache
  *
- * @memo: lets you pick your memoizing poison
+ * @cache: lets you pick your memoizing poison
  */
-class CacheService[Req, Rep](svc: Service[Req, Rep], memo: Memo[Req, RichFuture[Rep]] = CacheService.defaultMemo()) extends ServiceProxy[Req, Rep](svc) {
-  private[this] val fn = memo({ req: Req => new RichFuture(svc(req)) })
+class CacheService[Req, Rep](svc: Service[Req, Rep], cacheMaker: (Req => RichFuture[Rep]) => Cache[Req, RichFuture[Rep]] = CacheService.defaultCache()) extends ServiceProxy[Req, Rep](svc) {
+  private[this] val cache = cacheMaker({ req: Req => new RichFuture(svc(req)) })
 
   override def apply(req: Req): Future[Rep] = {
-    val f = fn(req)
+    val f = cache.get(req)
     val p = Promise[Rep]()
     p.becomeUnlessInterrupted(f)
     p
@@ -22,18 +22,18 @@ class CacheService[Req, Rep](svc: Service[Req, Rep], memo: Memo[Req, RichFuture[
 
 
 object CacheService {
-  def defaultMemo[Req, Rep](): Memo[Req, RichFuture[Rep]] =
-    Memoize.apply[Req, RichFuture[Rep]]
+  def defaultCache[Req, Rep](): (Req => RichFuture[Rep]) => Cache[Req, RichFuture[Rep]] =
+    mapToCache(new concurrent.TrieMap())
 
-  def mapToMemo[Req, Rep](
+  def mapToCache[Req, Rep](
     map: concurrent.Map[Req, RichFuture[Rep]]
-  ) = { fn: (Req => RichFuture[Rep]) =>
-    { req: Req =>
-      map.get(req) getOrElse {
-        synchronized {
-          map.getOrElseUpdate(req, fn(req))
-        }
+  ): (Req => RichFuture[Rep]) => Cache[Req, RichFuture[Rep]] = { fn: (Req => RichFuture[Rep]) =>
+    val cache: Cache[Req, RichFuture[Rep]] = new MapCache(fn, map, { case (c: Cache[Req, RichFuture[Rep]], req: Req, rf: RichFuture[Rep]) =>
+      val f = rf.underlying
+      f.onFailure { case t: Throwable =>
+        c.evict(req, rf)
       }
-    }
+    })
+    cache
   }
 }
