@@ -1,28 +1,40 @@
 package com.mosesn.escrow
 
+import com.twitter.util.Future
 import scala.collection.concurrent
 
-trait Cache[A, B] {
-  val fn: A => B
-  def get(a: A): B
+/**
+ * Each of these actions should be atomic
+ */
+trait Cache[A, B] extends (A => B) {
+  final def apply(a: A): B = get(a).get
+
+  def get(a: A): Option[B]
+
+  def set(a: A, b: B)
 
   def evict(a: A, b: B)
 }
 
-class MapCache[A, B](val fn: A => B, map: concurrent.Map[A, B], onWrite: ((Cache[A, B], A, B)) => Unit) extends Cache[A, B] {
-  def this(fn: A => B, map: concurrent.Map[A, B]) = this(fn, map, { tup: (Cache[A, B], A, B) => () })
+class CacheProxy[A, B](underlying: Cache[A, B]) extends Cache[A, B] {
+  def get(a: A): Option[B] = underlying.get(a)
 
-  def get(a: A): B = map.get(a) getOrElse {
-    synchronized {
-      map.getOrElseUpdate(a, {
-        val f = fn(a)
-        onWrite(this, a, f)
-        f
-      })
-    }
+  def set(a: A, b: B) {
+    underlying.set(a, b)
   }
 
   def evict(a: A, b: B) {
-    map.remove(a, b)
+    underlying.evict(a, b)
   }
+}
+
+object Cache {
+  def fromMap[A, B](map: concurrent.Map[A, B]): Cache[A, B] = new ConcurrentMapCache(map)
+
+  def atomic[A, B](cache: Cache[A, B]): Cache[A, B] with Atomic[A, B] = new SynchronizedCache(cache)
+}
+
+object Escrow {
+  def evicting[A, B](escrow: Escrow[A, B]): EvictingEscrow[A, B] =
+    new EvictingEscrow(escrow)
 }
