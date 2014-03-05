@@ -1,6 +1,6 @@
 package com.mosesn.escrow.guava
 
-import com.mosesn.escrow.{Cache => MCache, Interruptible, Memo, Enrich, Evicting, RichFuture, Atomic}
+import com.mosesn.escrow.{Cache => MCache, Interruptible, Memo, Evicting, Atomic}
 import com.google.common.cache.{Cache => GCache}
 import com.twitter.util.Future
 import java.util.concurrent.Callable
@@ -26,6 +26,6 @@ object Guava {
 }
 
 object DefaultGuava {
-  def apply[A, B](fn: A => Future[B], cache: GCache[A, RichFuture[B]]): A => Future[B] =
-    Interruptible(Memo(Enrich(fn), Evicting.atomic(Guava.cache(cache))))
+  def apply[A, B](fn: A => Future[B], cache: GCache[A, Future[B]]): A => Future[B] =
+    Interruptible(Memo(fn, Evicting.atomic(Guava.cache(cache))))
 }
